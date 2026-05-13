@@ -1,37 +1,98 @@
 const express = require('express');
 const cors = require('cors');
+const https = require('https');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
+const MOLLIE_API_KEY = 'live_tWjtCRcpt796wQ3PAS7FPEynmuqWcK';
+const FRONTEND_URL = 'https://youcaps-frontend.onrender.com';
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
 });
 
-// Simple checkout endpoint (Mollie redirect only)
-app.post('/api/payment/checkout', (req, res) => {
+// Create Mollie payment
+async function createMolliePayment(amount, description, redirectUrl) {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({
+      amount: {
+        value: (amount / 100).toFixed(2),
+        currency: 'EUR'
+      },
+      description: description,
+      redirectUrl: redirectUrl,
+      locale: 'nl_NL'
+    });
+
+    const options = {
+      hostname: 'api.mollie.com',
+      path: '/v2/payments',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${MOLLIE_API_KEY}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data);
+          if (res.statusCode === 201) {
+            resolve(response);
+          } else {
+            reject(new Error(response.detail || 'Mollie API error'));
+          }
+        } catch (e) {
+          reject(new Error(`Failed to parse Mollie response: ${data}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Checkout endpoint
+app.post('/api/payment/checkout', async (req, res) => {
   try {
     const { email, firstName, lastName, amount, description } = req.body;
+
+    console.log(`[Checkout] Email: ${email}, Amount: ${amount}`);
 
     if (!email || !amount) {
       return res.status(400).json({ error: 'Email and amount required' });
     }
 
-    // Return Mollie test checkout URL
+    const mollieDescription = description || `Youcaps - ${firstName} ${lastName}`;
+    const redirectUrl = `${FRONTEND_URL}/success.html?email=${encodeURIComponent(email)}`;
+
+    // Create Mollie payment
+    const payment = await createMolliePayment(amount, mollieDescription, redirectUrl);
+
+    console.log(`[Checkout] Payment created: ${payment.id}`);
+
     res.json({
       success: true,
       data: {
-        paymentId: `test_${Date.now()}`,
+        paymentId: payment.id,
         amount: amount / 100,
         currency: 'EUR',
-        checkoutUrl: 'https://www.mollie.com/en/checkout/test-mode',
-        status: 'pending'
+        checkoutUrl: payment._links.checkout.href,
+        status: payment.status
       }
     });
   } catch (err) {
+    console.error('[Checkout] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
