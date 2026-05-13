@@ -8,6 +8,99 @@ const { sendPaymentConfirmation, sendPaymentFailureNotification } = require('../
 const router = express.Router();
 
 /**
+ * POST /api/payment/checkout
+ * Simple checkout endpoint - creates customer, subscription, and payment in one call
+ * Body: { email, firstName, lastName, address, city, postalCode, country, marketing, amount, currency, description }
+ */
+router.post('/checkout', async (req, res, next) => {
+  try {
+    const { 
+      email, 
+      firstName, 
+      lastName, 
+      address, 
+      city, 
+      postalCode, 
+      country, 
+      marketing,
+      amount,
+      currency,
+      description
+    } = req.body;
+
+    logger.info(`Checkout request for email: ${email}`);
+
+    // Validate required fields
+    if (!email || !firstName || !lastName || !amount) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: email, firstName, lastName, amount'
+      });
+    }
+
+    // Create or get customer
+    let customer = await Customer.findByEmail(email);
+    if (!customer) {
+      customer = await Customer.create({
+        email,
+        first_name: firstName,
+        last_name: lastName,
+        address,
+        city,
+        postal_code: postalCode,
+        country: country || 'NL',
+        marketing_consent: marketing || false,
+        status: 'pending'
+      });
+      logger.info(`New customer created: ${customer.id}`);
+    }
+
+    // Create or get Mollie customer
+    const mollieCustomer = await paymentService.createOrGetMollieCustomer(
+      customer.email,
+      customer.first_name,
+      customer.last_name
+    );
+
+    // Create payment
+    const amountCents = Math.round((amount || 2900) / 100); // Normalize to euros
+    const payment = await paymentService.createPayment(
+      mollieCustomer.id,
+      amountCents,
+      description || 'Youcaps Subscription',
+      `${process.env.FRONTEND_URL || 'https://youcaps-frontend.onrender.com'}/success.html`
+    );
+
+    // Save payment transaction
+    const transaction = await PaymentTransaction.create({
+      customerId: customer.id,
+      molliePaymentId: payment.id,
+      amountEur: amountCents,
+      status: payment.status,
+      description: description || 'Youcaps Subscription'
+    });
+
+    logger.info(`Payment created: ${payment.id}`);
+
+    res.status(201).json({
+      success: true,
+      data: {
+        customerId: customer.id,
+        paymentId: payment.id,
+        transactionId: transaction.id,
+        amount: amountCents,
+        currency: currency || 'EUR',
+        checkoutUrl: payment._links?.checkout?.href || payment.getCheckoutUrl?.(),
+        status: payment.status
+      }
+    });
+  } catch (error) {
+    logger.error('Checkout error:', error);
+    next(error);
+  }
+});
+
+/**
  * POST /api/payment/create
  * Create payment for subscription
  * Body: { customerId, subscriptionId, redirectUrl }
