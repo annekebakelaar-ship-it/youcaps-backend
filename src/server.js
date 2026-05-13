@@ -1,29 +1,43 @@
-#!/usr/bin/env node
+const express = require('express');
+const cors = require('cors');
 require('dotenv').config();
-const app = require('./app');
-const logger = require('./utils/logger');
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date() });
+});
+
+// Simple checkout endpoint (Mollie redirect only)
+app.post('/api/payment/checkout', (req, res) => {
+  try {
+    const { email, firstName, lastName, amount, description } = req.body;
+
+    if (!email || !amount) {
+      return res.status(400).json({ error: 'Email and amount required' });
+    }
+
+    // Return Mollie test checkout URL
+    res.json({
+      success: true,
+      data: {
+        paymentId: `test_${Date.now()}`,
+        amount: amount / 100,
+        currency: 'EUR',
+        checkoutUrl: 'https://www.mollie.com/en/checkout/test-mode',
+        status: 'pending'
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 const PORT = process.env.PORT || 3000;
-const ENV = process.env.NODE_ENV || 'development';
-
-const server = app.listen(PORT, () => {
-  logger.info(`🚀 Youcaps Backend Server running on port ${PORT} [${ENV}]`);
-  logger.info(`Email Service: ${process.env.SMTP_HOST}`);
-  logger.info(`Database: ${process.env.SUPABASE_URL ? 'Supabase' : 'Not configured'}`);
-  logger.info(`Payment Gateway: ${process.env.MOLLIE_API_KEY ? 'Mollie' : 'Not configured'}`);
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
-
-process.on('unhandledRejection', (err) => {
-  logger.error('Unhandled Rejection:', err);
-  process.exit(1);
-});
-
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
-  });
-});
-
-module.exports = server;
