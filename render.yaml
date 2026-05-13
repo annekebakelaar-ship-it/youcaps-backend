@@ -1,0 +1,23 @@
+# Render.yaml - Render Deployment Configuration
+# This file helps with one-click deployments to Render
+
+services:
+  - type: web
+    name: youcaps-backend
+    env: node
+    plan: standard
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: LOG_LEVEL
+        value: info
+      - key: FRONTEND_URL
+        value: https://youcaps.app
+        sync: false
+      - key: CORS_ORIGIN
+        value: https://youcaps.app,https://www.youcaps.app
+        sync: false
