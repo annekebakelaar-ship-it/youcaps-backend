@@ -25,8 +25,7 @@ async function createMolliePayment(amount, description, redirectUrl) {
       },
       description: description,
       redirectUrl: redirectUrl,
-      locale: 'en_US',
-      testmode: false
+      locale: 'en_US'
     });
 
     const options = {
