@@ -80,6 +80,15 @@ app.post('/api/payment/checkout', async (req, res) => {
     const payment = await createMolliePayment(amount, mollieDescription, redirectUrl);
 
     console.log(`[Checkout] Payment created: ${payment.id}`);
+    console.log(`[Checkout] Payment object:`, JSON.stringify(payment, null, 2));
+    console.log(`[Checkout] Links:`, payment._links);
+    console.log(`[Checkout] Checkout link:`, payment._links?.checkout?.href);
+
+    const checkoutUrl = payment._links?.checkout?.href;
+    if (!checkoutUrl) {
+      console.error('[Checkout] No checkout URL in Mollie response!');
+      throw new Error('Mollie payment created but no checkout URL returned');
+    }
 
     res.json({
       success: true,
@@ -87,7 +96,7 @@ app.post('/api/payment/checkout', async (req, res) => {
         paymentId: payment.id,
         amount: amount / 100,
         currency: 'EUR',
-        checkoutUrl: payment._links.checkout.href,
+        checkoutUrl: checkoutUrl,
         status: payment.status
       }
     });
